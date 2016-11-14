@@ -1,6 +1,6 @@
 /*
  * filter.js
- * 2.1.0 (2016-08-09)
+ * 2.1.0 (2016-11-14)
  *
  * Released under the MIT license
  * http://opensource.org/licenses/MIT
@@ -865,6 +865,7 @@
     this.$container = $(container);
     this.view = this.opts.view || renderRecord;
     this.criterias = [];
+    this.orders = [];
     this._index = 1;
     this.appendToContainer = this.opts.appendToContainer || appendToContainer;
     this.has_pagination = !!this.opts.pagination;
@@ -946,7 +947,7 @@
       return false;
     }
   
-    var records = this.Model.records, 
+    var records = this.Model.records,
         removedCount = 0,
         idsLength = ids.length,
         fid;
@@ -959,7 +960,7 @@
         removedCount ++;
   
         $('#fjs_' + fid).remove();
-      } 
+      }
   
       if(removedCount == idsLength){
         break;
@@ -976,8 +977,8 @@
   };
   
   F.render = function(records){
-    var self = this, 
-        ele, 
+    var self = this,
+        ele,
         cbName;
   
     if(!records.length){return; }
@@ -988,8 +989,8 @@
     $.each(records, function(i){
       self.execCallback(cbName, this);
       this._fid = (self._index++);
-    
-      if(!self.has_pagination){ 
+  
+      if(!self.has_pagination){
         self.renderItem(this, i);
       }
     });
@@ -1050,6 +1051,21 @@
     return true;
   };
   
+  F.addOrder = function(orders){
+    var self = this;
+    if(!orders){ return false; }
+  
+    if($.isArray(orders)){
+      $.each(orders, function(){
+        addOrderCriteria.call(self, this);
+      });
+    } else {
+      addOrderCriteria.call(self, orders);
+    }
+  
+    return true;
+  };
+  
   // Add Filter criteria
   // criteria: { ele: '#name', event: 'check', field: 'name', type: 'range' }
   var addFilterCriteria = function(criteria){
@@ -1070,6 +1086,30 @@
     criteria.active = true;
   
     this.criterias.push(criteria);
+  
+    return true;
+  };
+  
+  
+  // Add Order criteria
+  // order: { ele: '#ordertoggle'}
+  // option value must be value="field.in.object|asc/desc"
+  
+  var addOrderCriteria = function(order){
+    if(!order || !order.ele){
+      return false;
+    }
+  
+    order.$ele = $(order.ele);
+  
+    if(!order.$ele.length){
+      return false;
+    }
+    order = setDefaultCriteriaOpts(order);
+    this.bindEvent(order.ele, order.event);
+  
+    order.active = true;
+    this.orders.push(order);
   
     return true;
   };
@@ -1120,9 +1160,18 @@
   F.getSelectedValues = function(criteria, context){
     var vals = [];
   
-    criteria.$ele.filter(criteria.selector).each(function() {
-      vals.push($(this).val());
-    });
+    if(criteria.multiples) {
+      criteria.$ele.filter(criteria.selector).each(function() {
+        var str = $(this).val();
+        var res = str.split(criteria.delimiter || '-');
+        Array.prototype.push.apply(vals, res);
+      });
+    } else {
+      criteria.$ele.filter(criteria.selector).each(function() {
+        vals.push($(this).val());
+      });
+   }
+   if(vals==""){vals = ['$#$^*IJKJKIU*(ISHKJM<KU*(*&LKJASsfsdLASKH'];}
   
     if($.isArray(vals[0])){
       vals = [].concat.apply([], vals);
@@ -1145,12 +1194,27 @@
     return (this.last_result || this.records);
   };
   
+  F.getOrderValues = function(order, context) {
+    var vals = {};
+  
+    order.$ele.filter(order.selector).each(function() {
+       var str = $(this).val();
+       var splits = str.split('|');
+       vals[splits[0]] = splits[1];
+    });
+  
+    return vals;
+  };
+  
   F.filter = function(){
-    var query = {}, 
+    var query = {},
         vals, _q,
         count = 0,
         self = this,
-        criteria;
+        criteria,
+        orders,
+        orvals,
+        orcount = 0;
   
     $.each(this.criterias, function(){
       if(this.active){
@@ -1165,7 +1229,19 @@
     });
   
     this.anyFilterSelected = count > 0;
-    criteria = count ? this.Model.where(query) : this.Model;
+  
+    $.each(this.orders, function() {
+      if(this.active){
+        orvals = self.getOrderValues(this, self);
+        orcount = orcount + 1;
+      }
+    });
+    if(orcount > 0){
+      criteria = count ? this.Model.where(query).order(orvals) : this.Model.order(orvals);
+    } else {
+      criteria = count ? this.Model.where(query) : this.Model;
+    }
+  
     this.execCallback('shortResult', criteria);
     this.last_result = criteria.all;
   
@@ -1202,7 +1278,7 @@
     for(i; i < l; i++){
       $('#fjs_' + result[i]._fid).show();
     }
-    
+  
   };
   
   F.filterTimer = function(timeout){
@@ -1443,9 +1519,9 @@
     var type = this.Model.schema[field];
   
     if(type == 'Number'){
-      return $.map(values, function(v){ return Number(v) }); 
+      return $.map(values, function(v){ return Number(v) });
     }else if(type == 'Boolean'){
-      return $.map(values, function(v){ return (v == 'true' || v == true) }); 
+      return $.map(values, function(v){ return (v == 'true' || v == true) });
     }else{
       return values;
     }
@@ -1460,8 +1536,6 @@
       this.filter();
     }
   };
-  
-  
 
   var Paginator = function(recordsCount, opts, onPagination) {
     var paginationView;
